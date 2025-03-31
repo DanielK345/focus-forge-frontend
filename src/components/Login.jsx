@@ -42,7 +42,7 @@ const Login = () => {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
-            className="w-full p-3 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full p-3 text-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           <input
             type="password"
@@ -50,7 +50,7 @@ const Login = () => {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            className="w-full p-3 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full p-3 text-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           <button
             type="submit"
