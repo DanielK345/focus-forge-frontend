@@ -8,6 +8,7 @@ import BlockedWebsiteModal from './BlockedWebsiteModal';
 import { eventColors, getRandomEventColor } from './utils/colorUtils';
 import { fetchUserData, saveUserData } from './utils/apiUtils';
 import { validateUrl, getFavicon } from './utils/urlUtils';
+import API from "../../config";
 
 const WeeklyScheduler = () => {
   const [showModal, setShowModal] = useState(false); //event modal
@@ -29,6 +30,8 @@ const WeeklyScheduler = () => {
 
   // State for calendar events
   const [calendarEventsMap, setCalendarEventsMap] = useState({});
+
+  const [sessionInfo, setSessionInfo] = useState({});
 
   // Add new calendar
   const handleAddCalendar = () => {
@@ -178,85 +181,50 @@ const WeeklyScheduler = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [history, currentHistoryIndex]);
 
+  // Thêm mã để cập nhật thông tin phiên khi tải dữ liệu
   useEffect(() => {
     const loadData = async () => {
-        setIsLoading(true);
-        setError(null);
+      setIsLoading(true);
+      setError(null);
+      
+      try {
+        const token = localStorage.getItem('token');
+        const userID = localStorage.getItem('userID');
         
-        try {
-            const token = localStorage.getItem('token');
-            const userID = localStorage.getItem('userID');
+        // Cập nhật thông tin phiên
+        setSessionInfo({
+          sessionId: localStorage.getItem("sessionId") || "N/A",
+          activeSessions: localStorage.getItem("activeSessions") || "1"
+        });
 
-            if (!userID) {
-                console.error("No user ID found. Redirecting to home...");
-                navigate("/");
-                return;
-            }
+        if (!userID) {
+          console.error("No user ID found. Redirecting to home...");
+          navigate("/");
+          return;
+        }
+        
+        // Gọi hàm kiểm tra phiên và cập nhật thông tin phiên
+        // await checkAndUpdateSessionInfo(userID, token);
+        
+        const { calendarsData, blocklistData } = await fetchUserData(userID, token);
+        console.log("Calendars Data:", calendarsData);
+        console.log("Blocklist Data:", blocklistData);
+        
+        // Xử lý dữ liệu calendar
+        if (calendarsData && Array.isArray(calendarsData.calendars) && calendarsData.calendars.length > 0) {
+            // Có dữ liệu calendar
+            setCalendars(calendarsData.calendars);
+            setActiveCalendarId(calendarsData.calendars[0].id);
             
-            const { calendarsData, blocklistData } = await fetchUserData(userID, token);
-            console.log("Calendars Data:", calendarsData);
-            console.log("Blocklist Data:", blocklistData);
-            
-            // Xử lý dữ liệu calendar
-            if (calendarsData && Array.isArray(calendarsData.calendars) && calendarsData.calendars.length > 0) {
-                // Có dữ liệu calendar
-                setCalendars(calendarsData.calendars);
-                setActiveCalendarId(calendarsData.calendars[0].id);
-                
-                // Tạo map events cho từng calendar
-                const eventsMap = {};
-                calendarsData.calendars.forEach(calendar => {
-                    eventsMap[calendar.id] = calendar.events || [];
-                });
-                setCalendarEventsMap(eventsMap);
-                setCalendarEvents(eventsMap[calendarsData.calendars[0].id] || []);
-            } else {
-                // Không có dữ liệu calendar, tạo calendar mặc định
-                const defaultCalendar = {
-                    id: 1,
-                    name: 'Default Calendar',
-                    events: [],
-                    active: true
-                };
-                setCalendars([defaultCalendar]);
-                setActiveCalendarId(defaultCalendar.id);
-                setCalendarEvents([]);
-                setCalendarEventsMap({ [defaultCalendar.id]: [] });
-            }
-
-            // Xử lý dữ liệu blocklist
-            console.log("Processing blocklist data:", blocklistData);
-            if (blocklistData && blocklistData.lists && Array.isArray(blocklistData.lists) && blocklistData.lists.length > 0) {
-                // Đảm bảo mỗi list có id dạng số và websites là mảng
-                const processedLists = blocklistData.lists.map(list => ({
-                    ...list,
-                    id: Number(list.id),
-                    websites: Array.isArray(list.websites) ? list.websites.map(site => {
-                        if (typeof site === 'string') {
-                            return { url: site, icon: null };
-                        }
-                        return {
-                            url: site.url,
-                            icon: site.icon || null
-                        };
-                    }) : []
-                }));
-                
-                console.log("Setting blockedWebsiteLists:", processedLists);
-                setBlockedWebsiteLists(processedLists);
-            } else {
-                // Tạo một list mặc định nếu không có dữ liệu
-                console.log("No list data, creating default list");
-                setBlockedWebsiteLists([{
-                    id: 1,
-                    name: 'Default List',
-                    websites: []
-                }]);
-            }
-        } catch (err) {
-            console.error("Error loading data:", err);
-            setError("Failed to load your calendar data. Please try refreshing the page.");
-            // Initialize with empty data on error
+            // Tạo map events cho từng calendar
+            const eventsMap = {};
+            calendarsData.calendars.forEach(calendar => {
+                eventsMap[calendar.id] = calendar.events || [];
+            });
+            setCalendarEventsMap(eventsMap);
+            setCalendarEvents(eventsMap[calendarsData.calendars[0].id] || []);
+        } else {
+            // Không có dữ liệu calendar, tạo calendar mặc định
             const defaultCalendar = {
                 id: 1,
                 name: 'Default Calendar',
@@ -266,18 +234,87 @@ const WeeklyScheduler = () => {
             setCalendars([defaultCalendar]);
             setActiveCalendarId(defaultCalendar.id);
             setCalendarEvents([]);
+            setCalendarEventsMap({ [defaultCalendar.id]: [] });
+        }
+
+        // Xử lý dữ liệu blocklist
+        console.log("Processing blocklist data:", blocklistData);
+        if (blocklistData && blocklistData.lists && Array.isArray(blocklistData.lists) && blocklistData.lists.length > 0) {
+            // Đảm bảo mỗi list có id dạng số và websites là mảng
+            const processedLists = blocklistData.lists.map(list => ({
+                ...list,
+                id: Number(list.id),
+                websites: Array.isArray(list.websites) ? list.websites.map(site => {
+                    if (typeof site === 'string') {
+                        return { url: site, icon: null };
+                    }
+                    return {
+                        url: site.url,
+                        icon: site.icon || null
+                    };
+                }) : []
+            }));
+            
+            console.log("Setting blockedWebsiteLists:", processedLists);
+            setBlockedWebsiteLists(processedLists);
+        } else {
+            // Tạo một list mặc định nếu không có dữ liệu
+            console.log("No list data, creating default list");
             setBlockedWebsiteLists([{
                 id: 1,
                 name: 'Default List',
                 websites: []
             }]);
-        } finally {
-            setIsLoading(false);
         }
+      } catch (err) {
+        console.error("Error loading data:", err);
+        setError("Failed to load your calendar data. Please try refreshing the page.");
+        // Initialize with empty data on error
+        const defaultCalendar = {
+            id: 1,
+            name: 'Default Calendar',
+            events: [],
+            active: true
+        };
+        setCalendars([defaultCalendar]);
+        setActiveCalendarId(defaultCalendar.id);
+        setCalendarEvents([]);
+        setBlockedWebsiteLists([{
+            id: 1,
+            name: 'Default List',
+            websites: []
+        }]);
+      } finally {
+        setIsLoading(false);
+      }
     };
     
     loadData();
   }, [navigate]);
+
+  // Thêm hàm mới để kiểm tra và cập nhật thông tin phiên
+  // const checkAndUpdateSessionInfo = async (userID, token) => {
+  //   try {
+  //     // Sử dụng apiInterceptor và fetchUserProfile để lấy thông tin phiên
+  //     const userProfile = await fetchUserProfile(userID);
+      
+  //     if (userProfile && userProfile.sessions) {
+  //       // Cập nhật số lượng phiên đang hoạt động
+  //       const activeSessions = userProfile.sessions.length.toString();
+  //       localStorage.setItem("activeSessions", activeSessions);
+        
+  //       // Cập nhật state thông tin phiên
+  //       setSessionInfo({
+  //         sessionId: localStorage.getItem("sessionId") || "N/A",
+  //         activeSessions: activeSessions
+  //       });
+        
+  //       console.log("Session info updated:", activeSessions, "active sessions");
+  //     }
+  //   } catch (error) {
+  //     console.error("Error checking session info:", error);
+  //   }
+  // };
 
   // Handle date change
   const handleDatesSet = (arg) => {
@@ -700,14 +737,94 @@ const WeeklyScheduler = () => {
     setShowListModal(true);
   };
 
-  // Thêm hàm handleLogout
-  const handleLogout = () => {
-    // Xóa token và thông tin người dùng từ localStorage
-    localStorage.removeItem('token');
-    localStorage.removeItem('userID');
+  // Thêm hàm đăng xuất khi đóng cửa sổ
+  const logoutOnClose = async () => {
+    const userID = localStorage.getItem("userID");
+    const sessionId = localStorage.getItem("sessionId");
+    const token = localStorage.getItem("token");
+
+    if (sessionId && token) {
+      try {
+        // Sử dụng Beacon API để gửi yêu cầu không đồng bộ mà không chờ phản hồi
+        // Điều này giúp đảm bảo yêu cầu được gửi ngay cả khi trình duyệt đóng
+        const data = JSON.stringify({ sessionId, userID });
+        navigator.sendBeacon(
+          `${API.baseURL}/auth/logout`,
+          new Blob([data], { type: 'application/json' })
+        );
+        
+        console.log("Logout beacon sent");
+      } catch (error) {
+        console.error("Error sending logout beacon:", error);
+      }
+    }
+  };
+
+  // Đăng ký sự kiện beforeunload để đăng xuất khi người dùng đóng cửa sổ
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      logoutOnClose();
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
     
-    // Chuyển hướng người dùng đến trang đăng nhập
-    navigate('/login');
+    // Dọn dẹp khi component bị hủy
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      logoutOnClose(); // Đăng xuất khi component bị hủy (ví dụ: chuyển đến route khác)
+    };
+  }, []);
+
+  // Hàm handleLogout hiện tại
+  const handleLogout = async () => {
+    const userID = localStorage.getItem("userID");
+    const sessionId = localStorage.getItem("sessionId");
+    const token = localStorage.getItem("token");
+
+    if (!sessionId || !token) {
+      console.error("Missing session information");
+      navigate("/login");
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API.baseURL}/auth/logout`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({ 
+          sessionId,
+          userID
+        })
+      });
+
+      const data = await response.json();
+      
+      if (response.ok) {
+        console.log("Logout successful:", data.message);
+      } else {
+        console.error("Logout error:", data.error);
+      }
+    } catch (error) {
+      console.error("Logout network error:", error);
+    } finally {
+      // Xóa thông tin đăng nhập trong mọi trường hợp
+      localStorage.removeItem("token");
+      localStorage.removeItem("userID");
+      localStorage.removeItem("sessionId");
+      localStorage.removeItem("activeSessions");
+      localStorage.removeItem("loginTime");
+      
+      // Cập nhật state thông tin phiên
+      setSessionInfo({
+        sessionId: "N/A",
+        activeSessions: "0"
+      });
+      
+      navigate("/login");
+    }
   };
 
   if (isLoading) {
@@ -740,6 +857,20 @@ const WeeklyScheduler = () => {
 
   return (
     <div className="flex flex-col h-screen">
+      {/* Banner hiển thị thông tin phiên */}
+      <div className="bg-blue-900 text-white px-4 py-1 text-xs">
+        <div className="flex justify-between items-center">
+          <span>
+            Session ID: {sessionInfo.sessionId}
+            {' | '}
+            Active Sessions: {sessionInfo.activeSessions}
+          </span>
+          <span>
+            Login Time: {new Date(parseInt(localStorage.getItem('loginTime') || Date.now())).toLocaleString()}
+          </span>
+        </div>
+      </div>
+
       <div className="flex flex-1 overflow-hidden">
         <CalendarSidebar
           calendars={calendars}
