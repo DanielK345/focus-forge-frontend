@@ -5,10 +5,9 @@ import CalendarView from './CalendarView';
 import EventModal from './EventModal';
 import AddListModal from './AddListModal';
 import BlockedWebsiteModal from './BlockedWebsiteModal';
-import { eventColors, getRandomEventColor } from './utils/colorUtils';
+import colorUtils from './utils/colorUtils';
 import { fetchUserData, saveUserData } from './utils/apiUtils';
 import { validateUrl, getFavicon } from './utils/urlUtils';
-import API from "../../config";
 
 const WeeklyScheduler = () => {
   const [showModal, setShowModal] = useState(false); //event modal
@@ -27,11 +26,11 @@ const WeeklyScheduler = () => {
   const [newWebsite, setNewWebsite] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   // State for calendar events
   const [calendarEventsMap, setCalendarEventsMap] = useState({});
-
-  const [sessionInfo, setSessionInfo] = useState({});
 
   // Add new calendar
   const handleAddCalendar = () => {
@@ -79,7 +78,8 @@ const WeeklyScheduler = () => {
 
         return updatedCalendars;
     });
-};
+    setHasUnsavedChanges(true);
+  };
 
   // Activate calendar
   const handleCalendarActivate = (calendarId) => {
@@ -116,6 +116,7 @@ const WeeklyScheduler = () => {
     setCalendars(prev => prev.map(cal =>
       cal.id === calendarId ? { ...cal, name: newName } : cal
     ));
+    setHasUnsavedChanges(true);
   };
 
   // Delete calendar
@@ -153,6 +154,7 @@ const WeeklyScheduler = () => {
         return updatedMap;
       });
     }
+    setHasUnsavedChanges(true);
   };
 
   const [calendars, setCalendars] = useState([]);
@@ -175,6 +177,7 @@ const WeeklyScheduler = () => {
       if (e.ctrlKey && e.key === 'z' && currentHistoryIndex > 0) {
         setCurrentHistoryIndex(prev => prev - 1);
         setCalendarEvents(history[currentHistoryIndex - 1]);
+        setHasUnsavedChanges(true);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -191,20 +194,11 @@ const WeeklyScheduler = () => {
         const token = localStorage.getItem('token');
         const userID = localStorage.getItem('userID');
         
-        // Cập nhật thông tin phiên
-        setSessionInfo({
-          sessionId: localStorage.getItem("sessionId") || "N/A",
-          activeSessions: localStorage.getItem("activeSessions") || "1"
-        });
-
         if (!userID) {
           console.error("No user ID found. Redirecting to home...");
           navigate("/");
           return;
         }
-        
-        // Gọi hàm kiểm tra phiên và cập nhật thông tin phiên
-        // await checkAndUpdateSessionInfo(userID, token);
         
         const { calendarsData, blocklistData } = await fetchUserData(userID, token);
         console.log("Calendars Data:", calendarsData);
@@ -292,30 +286,6 @@ const WeeklyScheduler = () => {
     loadData();
   }, [navigate]);
 
-  // Thêm hàm mới để kiểm tra và cập nhật thông tin phiên
-  // const checkAndUpdateSessionInfo = async (userID, token) => {
-  //   try {
-  //     // Sử dụng apiInterceptor và fetchUserProfile để lấy thông tin phiên
-  //     const userProfile = await fetchUserProfile(userID);
-      
-  //     if (userProfile && userProfile.sessions) {
-  //       // Cập nhật số lượng phiên đang hoạt động
-  //       const activeSessions = userProfile.sessions.length.toString();
-  //       localStorage.setItem("activeSessions", activeSessions);
-        
-  //       // Cập nhật state thông tin phiên
-  //       setSessionInfo({
-  //         sessionId: localStorage.getItem("sessionId") || "N/A",
-  //         activeSessions: activeSessions
-  //       });
-        
-  //       console.log("Session info updated:", activeSessions, "active sessions");
-  //     }
-  //   } catch (error) {
-  //     console.error("Error checking session info:", error);
-  //   }
-  // };
-
   // Handle date change
   const handleDatesSet = (arg) => {
     setCurrentDate(arg.start.toISOString().slice(0, 10));
@@ -360,8 +330,8 @@ const WeeklyScheduler = () => {
         const calendarApi = selectInfo.view.calendar;
         calendarApi.unselect();
         
-        const eventColor = getRandomEventColor(eventColors);
-        const colorIndex = eventColors.findIndex(color => 
+        const eventColor = colorUtils.getRandomEventColor(colorUtils.eventColors);
+        const colorIndex = colorUtils.eventColors.findIndex(color => 
             color.backgroundColor === eventColor.backgroundColor);
         
         // Tạo ID số cho event mới
@@ -398,6 +368,7 @@ const WeeklyScheduler = () => {
         
         // Thêm vào lịch sử
         addToHistory(updatedEvents);
+        setHasUnsavedChanges(true);
     }
   };
 
@@ -430,6 +401,7 @@ const WeeklyScheduler = () => {
       
       return updatedEvents;
     });
+    setHasUnsavedChanges(true);
   };
 
   // Xóa sự kiện
@@ -462,6 +434,7 @@ const WeeklyScheduler = () => {
         // Đóng modal và xóa sự kiện đã chọn
         setShowModal(false);
         setSelectedEvent(null);
+        setHasUnsavedChanges(true);
       } catch (error) {
         console.error("Error deleting event:", error);
       }
@@ -493,126 +466,126 @@ const WeeklyScheduler = () => {
   // Save events to server
   const saveEvents = async () => {
     const userID = localStorage.getItem('userID');
-
     if (!userID) {
-        console.error("No user ID found");
-        return;
+      console.error("No user ID found");
+      alert("Error: No user ID found. Cannot save.");
+      return false;
     }
-
     try {
-        // Ensure calendars data is properly structured
-        const calendarsToSave = calendars.map(calendar => {
-            const events = calendarEventsMap[calendar.id] || [];
-            
-            // Đảm bảo trạng thái active được thiết lập đúng
-            const isActive = calendar.id === activeCalendarId;
+      // Ensure calendars data is properly structured
+      const calendarsToSave = calendars.map(calendar => {
+        const events = calendarEventsMap[calendar.id] || [];
+        
+        // Đảm bảo trạng thái active được thiết lập đúng
+        const isActive = calendar.id === activeCalendarId;
+        
+        return {
+          id: Number(calendar.id),
+          name: calendar.name,
+          events: events.map(event => {
+            // Lấy mô tả từ cả hai nguồn có thể
+            const description = event.extendedProps?.description || event.description || '';
             
             return {
-                id: Number(calendar.id),
-                name: calendar.name,
-                events: events.map(event => {
-                    // Lấy mô tả từ cả hai nguồn có thể
-                    const description = event.extendedProps?.description || event.description || '';
-                    
-                    
-                    return {
-                        id: Number(event.id),
-                        title: event.title,
-                        start: event.start,
-                        end: event.end,
-                        backgroundColor: event.backgroundColor,
-                        borderColor: event.borderColor,
-                        textColor: event.textColor,
-                        description: description, // Thêm description ở cấp cao nhất
-                        extendedProps: {
-                            description: description,
-                            colorIndex: Number(event.extendedProps?.colorIndex || 0),
-                            focusMode: Boolean(event.extendedProps?.focusMode),
-                            blocklistID: event.extendedProps?.blocklistID ? Number(event.extendedProps.blocklistID) : null
-                        }
-                    };
-                }),
-                active: isActive // Sử dụng giá trị đã tính toán
+              id: Number(event.id),
+              title: event.title,
+              start: event.start,
+              end: event.end,
+              backgroundColor: event.backgroundColor,
+              borderColor: event.borderColor,
+              textColor: event.textColor,
+              description: description, // Thêm description ở cấp cao nhất
+              extendedProps: {
+                description: description,
+                colorIndex: Number(event.extendedProps?.colorIndex || 0),
+                focusMode: Boolean(event.extendedProps?.focusMode),
+                blocklistID: event.extendedProps?.blocklistID ? Number(event.extendedProps.blocklistID) : null
+              }
             };
-        });
+          }),
+          active: isActive // Sử dụng giá trị đã tính toán
+        };
+      });
 
-        // Ensure blocklist data is properly structured
-        const blockedWebsitesToSave = blockedWebsiteLists.map(list => {
-            // Đảm bảo mỗi list có id dạng số và websites là mảng
-            const id = typeof list.id === 'number' ? list.id : Number(list.id);
-            const name = String(list.name || '');
-            
-            // Đảm bảo websites là mảng và có cấu trúc đúng
-            let websites = [];
-            if (Array.isArray(list.websites)) {
-                websites = list.websites.map(site => {
-                    if (typeof site === 'string') {
-                        return { 
-                            url: site,
-                            icon: null
-                        };
-                    } else if (site && typeof site === 'object') {
-                        return {
-                            url: String(site.url || ''),
-                            icon: site.icon || null
-                        };
-                    }
-                    return null;
-                }).filter(site => site && site.url); // Lọc bỏ các site không hợp lệ
+      // Ensure blocklist data is properly structured
+      const blockedWebsitesToSave = blockedWebsiteLists.map(list => {
+        // Đảm bảo mỗi list có id dạng số và websites là mảng
+        const id = typeof list.id === 'number' ? list.id : Number(list.id);
+        const name = String(list.name || '');
+        
+        // Đảm bảo websites là mảng và có cấu trúc đúng
+        let websites = [];
+        if (Array.isArray(list.websites)) {
+          websites = list.websites.map(site => {
+            if (typeof site === 'string') {
+              return { 
+                url: site,
+                icon: null
+              };
+            } else if (site && typeof site === 'object') {
+              return {
+                url: String(site.url || ''),
+                icon: site.icon || null
+              };
             }
-            
-            return { id, name, websites };
-        });
-
-        console.log("Saving data to server...");
-
-        const {eventsResponse, blocklistResponse} = await saveUserData(
-            userID,
-            calendarsToSave,
-            blockedWebsitesToSave
-        );
+            return null;
+          }).filter(site => site && site.url); // Lọc bỏ các site không hợp lệ
+        }
         
-        if (!eventsResponse || !blocklistResponse) {
-            throw new Error("Failed to get response from server");
-        }
+        return { id, name, websites };
+      });
 
-        const blocklistData = await blocklistResponse.json();
-        const eventsData = await eventsResponse.json();
+      console.log("Saving data to server...");
+
+      const { eventsResponse, blocklistResponse } = await saveUserData(
+        userID,
+        calendarsToSave,
+        blockedWebsitesToSave
+      );
+      
+      if (!eventsResponse || !blocklistResponse) {
+        throw new Error("Failed to get response from server");
+      }
+
+      const blocklistData = await blocklistResponse.json();
+      const eventsData = await eventsResponse.json();
+      
+      if (!eventsResponse.ok) {
+        throw new Error(eventsData.error || "Failed to save events");
+      }
+
+      if (!blocklistResponse.ok) {
+        throw new Error(blocklistData.error || "Failed to save blocked websites");
+      }
+
+      alert("Events & Blocklist updated successfully! 🎉");
+      console.log("Saved Events:", eventsData);
+      console.log("Updated Blocklist:", blocklistData);
+      
+      // Cập nhật dữ liệu blocklist từ server nếu có
+      if (blocklistData && blocklistData.lists && Array.isArray(blocklistData.lists)) {
+        const processedLists = blocklistData.lists.map(list => ({
+          ...list,
+          id: Number(list.id),
+          websites: Array.isArray(list.websites) ? list.websites.map(site => {
+            if (typeof site === 'string') {
+              return { url: site, icon: null };
+            }
+            return {
+              url: site.url,
+              icon: site.icon || null
+            };
+          }) : []
+        }));
         
-        if (!eventsResponse.ok) {
-            throw new Error(eventsData.error || "Failed to save events");
-        }
-
-        if (!blocklistResponse.ok) {
-            throw new Error(blocklistData.error || "Failed to save blocked websites");
-        }
-
-        alert("Events & Blocklist updated successfully! 🎉");
-        console.log("Saved Events:", eventsData);
-        console.log("Updated Blocklist:", blocklistData);
-        
-        // Cập nhật dữ liệu blocklist từ server nếu có
-        if (blocklistData && blocklistData.lists && Array.isArray(blocklistData.lists)) {
-            // Đảm bảo mỗi list có id dạng số và websites là mảng
-            const processedLists = blocklistData.lists.map(list => ({
-                ...list,
-                id: Number(list.id),
-                websites: Array.isArray(list.websites) ? list.websites.map(site => {
-                    if (typeof site === 'string') {
-                        return { url: site, icon: null };
-                    }
-                    return {
-                        url: site.url,
-                        icon: site.icon || null
-                    };
-                }) : []
-            }));
-            
-            setBlockedWebsiteLists(processedLists);
-        }
+        setBlockedWebsiteLists(processedLists);
+      }
+      setHasUnsavedChanges(false);
+      return true;
     } catch (error) {
-        console.error("Error saving events:", error);
-        alert(`Error: ${error.message}`);
+      console.error("Error saving events:", error);
+      alert(`Error saving data: ${error.message}`);
+      return false;
     }
   };
 
@@ -657,6 +630,7 @@ const WeeklyScheduler = () => {
 
         return updatedLists;
     });
+    setHasUnsavedChanges(true);
   };
 
   const updateListName = (listId, newName) => {
@@ -665,6 +639,7 @@ const WeeklyScheduler = () => {
         list.id === listId ? { ...list, name: newName } : list
       )
     );
+    setHasUnsavedChanges(true);
   };
 
   const removeBlockedWebsiteList = (listId) => {
@@ -675,6 +650,7 @@ const WeeklyScheduler = () => {
       setActiveList(null);
       setShowListModal(false);
     }
+    setHasUnsavedChanges(true);
   };
 
   const addBlockedWebsite = (url) => {
@@ -708,6 +684,7 @@ const WeeklyScheduler = () => {
         });
       });
     }
+    setHasUnsavedChanges(true);
   };
 
   const removeBlockedWebsite = (url) => {
@@ -730,6 +707,7 @@ const WeeklyScheduler = () => {
         });
       });
     }
+    setHasUnsavedChanges(true);
   };
   
   const handleListClick = (listId) => {
@@ -737,95 +715,60 @@ const WeeklyScheduler = () => {
     setShowListModal(true);
   };
 
-  // Thêm hàm đăng xuất khi đóng cửa sổ
-  const logoutOnClose = async () => {
-    const userID = localStorage.getItem("userID");
-    const sessionId = localStorage.getItem("sessionId");
-    const token = localStorage.getItem("token");
-
-    if (sessionId && token) {
-      try {
-        // Sử dụng Beacon API để gửi yêu cầu không đồng bộ mà không chờ phản hồi
-        // Điều này giúp đảm bảo yêu cầu được gửi ngay cả khi trình duyệt đóng
-        const data = JSON.stringify({ sessionId, userID });
-        navigator.sendBeacon(
-          `${API.baseURL}/auth/logout`,
-          new Blob([data], { type: 'application/json' })
-        );
-        
-        console.log("Logout beacon sent");
-      } catch (error) {
-        console.error("Error sending logout beacon:", error);
-      }
-    }
-  };
-
-  // Đăng ký sự kiện beforeunload để đăng xuất khi người dùng đóng cửa sổ
-  useEffect(() => {
-    const handleBeforeUnload = () => {
-      logoutOnClose();
-    };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    
-    // Dọn dẹp khi component bị hủy
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-      logoutOnClose(); // Đăng xuất khi component bị hủy (ví dụ: chuyển đến route khác)
-    };
-  }, []);
-
-  // Hàm handleLogout hiện tại
+  // Handle Logout
   const handleLogout = async () => {
-    const userID = localStorage.getItem("userID");
-    const sessionId = localStorage.getItem("sessionId");
-    const token = localStorage.getItem("token");
-
-    if (!sessionId || !token) {
-      console.error("Missing session information");
-      navigate("/login");
+    if (isLoggingOut) {
       return;
     }
+    setIsLoggingOut(true);
 
-    try {
-      const response = await fetch(`${API.baseURL}/auth/logout`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
-        body: JSON.stringify({ 
-          sessionId,
-          userID
-        })
-      });
-
-      const data = await response.json();
-      
-      if (response.ok) {
-        console.log("Logout successful:", data.message);
+    if (hasUnsavedChanges) {
+      if (window.confirm("You have unsaved changes. Save them before logging out?")) {
+        const saveSuccessful = await saveEvents();
+        if (saveSuccessful) {
+          localStorage.removeItem('token');
+          localStorage.removeItem('userID');
+          localStorage.removeItem('loginTime');
+          navigate('/login');
+          setIsLoggingOut(false);
+        } else {
+          alert("Failed to save changes. Please try again. You have not been logged out.");
+          setIsLoggingOut(false);
+          return;
+        }
       } else {
-        console.error("Logout error:", data.error);
+        if (window.confirm("Are you sure you want to log out without saving your changes?")) {
+          localStorage.removeItem('token');
+          localStorage.removeItem('userID');
+          localStorage.removeItem('loginTime');
+          navigate('/login');
+          setIsLoggingOut(false);
+        } else {
+          setIsLoggingOut(false);
+          return;
+        }
       }
-    } catch (error) {
-      console.error("Logout network error:", error);
-    } finally {
-      // Xóa thông tin đăng nhập trong mọi trường hợp
-      localStorage.removeItem("token");
-      localStorage.removeItem("userID");
-      localStorage.removeItem("sessionId");
-      localStorage.removeItem("activeSessions");
-      localStorage.removeItem("loginTime");
-      
-      // Cập nhật state thông tin phiên
-      setSessionInfo({
-        sessionId: "N/A",
-        activeSessions: "0"
-      });
-      
-      navigate("/login");
+    } else {
+      localStorage.removeItem('token');
+      localStorage.removeItem('userID');
+      localStorage.removeItem('loginTime');
+      navigate('/login');
+      setIsLoggingOut(false);
     }
   };
+
+  useEffect(() => {
+    const handleBeforeUnloadEvent = (event) => {
+      if (hasUnsavedChanges) {
+        event.preventDefault(); // Standard for most browsers
+        event.returnValue = ''; // Required for some browsers (e.g., Chrome)
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnloadEvent);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnloadEvent);
+    };
+  }, [hasUnsavedChanges]);
 
   if (isLoading) {
     return (
@@ -857,20 +800,6 @@ const WeeklyScheduler = () => {
 
   return (
     <div className="flex flex-col h-screen">
-      {/* Banner hiển thị thông tin phiên */}
-      <div className="bg-blue-900 text-white px-4 py-1 text-xs">
-        <div className="flex justify-between items-center">
-          <span>
-            Session ID: {sessionInfo.sessionId}
-            {' | '}
-            Active Sessions: {sessionInfo.activeSessions}
-          </span>
-          <span>
-            Login Time: {new Date(parseInt(localStorage.getItem('loginTime') || Date.now())).toLocaleString()}
-          </span>
-        </div>
-      </div>
-
       <div className="flex flex-1 overflow-hidden">
         <CalendarSidebar
           calendars={calendars}
@@ -894,7 +823,7 @@ const WeeklyScheduler = () => {
           exportEvents={exportEvents}
           saveEvents={saveEvents}
           blockedWebsiteLists={blockedWebsiteLists}
-          handleLogout={handleLogout}
+          onLogout={handleLogout}
         />
       </div>
       
@@ -906,11 +835,12 @@ const WeeklyScheduler = () => {
             setCalendarEventsMap={setCalendarEventsMap}
             activeCalendarId={activeCalendarId}
             setSelectedEvent={setSelectedEvent}
-            eventColors={eventColors}
+            eventColors={colorUtils.eventColors}
             deleteEvent={deleteEvent}
             setShowModal={setShowModal}
             blockedWebsiteLists={blockedWebsiteLists}
             toggleEventFocusMode={toggleEventFocusMode}
+            setHasUnsavedChanges={setHasUnsavedChanges}
           />
         </>
       )}
