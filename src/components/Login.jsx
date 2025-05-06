@@ -26,13 +26,11 @@ const Login = () => {
       const data = await response.json();
       
       console.log("Login response:", data);
+
       
       if (response.ok) {
         localStorage.setItem("token", data.token);
         localStorage.setItem("userID", data.userID);
-        localStorage.setItem("sessionId", data.sessionId || "unknown");
-        localStorage.setItem("activeSessions", data.activeSessions?.toString() || "1");
-        localStorage.setItem("loginTime", Date.now().toString());
     
         alert("Login successful!");
         navigate(`/dashboard/${data.userID}`);
