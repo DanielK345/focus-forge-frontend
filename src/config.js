@@ -3,7 +3,7 @@ const API = {
   
   // Thiết lập baseURL dựa trên môi trường
   // Ưu tiên sử dụng biến môi trường từ .env, nếu không có thì dùng giá trị mặc định
-  baseURL: process.env.BACKEND_URL,
+  baseURL: 'https://focusforge-backend-6976505155ee.herokuapp.com',
 
   // Endpoints
   endpoints: {
